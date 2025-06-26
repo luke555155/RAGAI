@@ -12,20 +12,26 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 import PyPDF2
 import docx
 import requests
+from dotenv import load_dotenv
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+load_dotenv()
 
 from .services.qdrant_client import QdrantClient
 
 app = FastAPI()
 
-OLLAMA_EMBEDDING_URL = "http://localhost:11434/api/embeddings"
-OLLAMA_GENERATE_URL = "http://localhost:11434/api/generate"
-QDRANT_URL = "http://localhost:6333"
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_EMBEDDING_URL = f"{OLLAMA_BASE_URL}/api/embeddings"
+OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
+QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
+QDRANT_PORT = os.getenv("QDRANT_PORT", "6333")
+QDRANT_URL = f"http://{QDRANT_HOST}:{QDRANT_PORT}"
 COLLECTION_NAME = "documents"
-OLLAMA_MODEL = "nomic-embed-text"
-OLLAMA_LLM_MODEL = "llama2"
+OLLAMA_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+OLLAMA_LLM_MODEL = os.getenv("LLM_MODEL", "llama2")
 
 qdrant_client = QdrantClient(QDRANT_URL, COLLECTION_NAME)
 
