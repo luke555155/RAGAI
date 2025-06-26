@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import requests
 from fastapi import HTTPException
@@ -56,4 +56,79 @@ class QdrantClient:
             return resp.json().get("result", [])
         except Exception as exc:
             logger.exception("Search error: %s", exc)
+            raise HTTPException(status_code=500, detail=f"Qdrant error: {exc}") from exc
+
+    def list_documents(self) -> List[Dict]:
+        """列出所有已上傳的文件"""
+        try:
+            self.ensure_collection()
+            docs: Dict[str, Dict[str, str]] = {}
+            body: Dict[str, Optional[Dict]] = {
+                "limit": 100,
+                "with_payload": ["document_id", "file_name", "upload_time"],
+                "with_vector": False,
+            }
+            offset = None
+            while True:
+                if offset:
+                    body["offset"] = offset
+                resp = requests.post(
+                    f"{self.url}/collections/{self.collection}/points/scroll",
+                    json=body,
+                    timeout=30,
+                )
+                if resp.status_code != 200:
+                    raise HTTPException(status_code=500, detail="Failed to scroll points")
+                data = resp.json()
+                for point in data.get("result", data.get("points", [])):
+                    payload = point.get("payload", {})
+                    doc_id = payload.get("document_id")
+                    if doc_id and doc_id not in docs:
+                        docs[doc_id] = {
+                            "document_id": doc_id,
+                            "file_name": payload.get("file_name"),
+                            "upload_time": payload.get("upload_time"),
+                        }
+                offset = data.get("next_page_offset") or data.get("next_offset")
+                if not offset:
+                    break
+            return list(docs.values())
+        except Exception as exc:
+            logger.exception("List documents error: %s", exc)
+            raise HTTPException(status_code=500, detail=f"Qdrant error: {exc}") from exc
+
+    def get_segments_by_doc(self, document_id: str) -> List[Dict]:
+        """取得指定文件的所有段落"""
+        try:
+            self.ensure_collection()
+            body = {
+                "limit": 100,
+                "with_payload": True,
+                "with_vector": False,
+                "filter": {
+                    "must": [{"key": "document_id", "match": {"value": document_id}}]
+                },
+            }
+            offset = None
+            segments: List[Dict] = []
+            while True:
+                if offset:
+                    body["offset"] = offset
+                resp = requests.post(
+                    f"{self.url}/collections/{self.collection}/points/scroll",
+                    json=body,
+                    timeout=30,
+                )
+                if resp.status_code != 200:
+                    raise HTTPException(status_code=500, detail="Failed to scroll points")
+                data = resp.json()
+                for point in data.get("result", data.get("points", [])):
+                    segments.append(point.get("payload", {}))
+                offset = data.get("next_page_offset") or data.get("next_offset")
+                if not offset:
+                    break
+            segments.sort(key=lambda x: x.get("chunk_index", 0))
+            return segments
+        except Exception as exc:
+            logger.exception("Get segments error: %s", exc)
             raise HTTPException(status_code=500, detail=f"Qdrant error: {exc}") from exc

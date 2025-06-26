@@ -6,10 +6,16 @@ interface Answer {
   references: string[]
 }
 
+interface QARecord {
+  question: string
+  answer: string
+}
+
 export default function QnAForm() {
   const [question, setQuestion] = useState('')
   const [response, setResponse] = useState<Answer | null>(null)
   const [loading, setLoading] = useState(false)
+  const [history, setHistory] = useState<QARecord[]>([])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -18,8 +24,11 @@ export default function QnAForm() {
     try {
       const data = await askQuestion(question)
       setResponse(data)
+      setHistory([{ question, answer: data.answer }, ...history])
     } catch (err) {
-      setResponse({ answer: 'Error fetching answer', references: [] })
+      const errRecord = { question, answer: 'Error fetching answer' }
+      setResponse({ answer: errRecord.answer, references: [] })
+      setHistory([errRecord, ...history])
     } finally {
       setLoading(false)
     }
@@ -45,7 +54,16 @@ export default function QnAForm() {
       </form>
       {response && (
         <div className="space-y-2 bg-gray-100 p-4 rounded">
-          <p className="font-semibold">Answer:</p>
+          <div className="flex justify-between">
+            <p className="font-semibold">Answer:</p>
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(response.answer)}
+              className="text-sm text-blue-600 underline"
+            >
+              複製回答
+            </button>
+          </div>
           <p>{response.answer}</p>
           {response.references.length > 0 && (
             <div>
@@ -57,6 +75,19 @@ export default function QnAForm() {
               </ul>
             </div>
           )}
+        </div>
+      )}
+      {history.length > 0 && (
+        <div className="space-y-2">
+          <p className="font-semibold">回答記錄:</p>
+          <ul className="space-y-1">
+            {history.map((h, idx) => (
+              <li key={idx} className="border p-2 rounded">
+                <p className="text-sm font-semibold">Q: {h.question}</p>
+                <p className="text-sm">A: {h.answer}</p>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>

@@ -25,3 +25,19 @@ export async function askQuestion(question: string) {
   }
   return res.json();
 }
+
+export async function fetchDocs() {
+  const res = await fetch('/api/docs');
+  if (!res.ok) {
+    throw new Error('Request failed');
+  }
+  return res.json();
+}
+
+export async function fetchDocumentSegments(id: string) {
+  const res = await fetch(`/api/docs/${id}`);
+  if (!res.ok) {
+    throw new Error('Request failed');
+  }
+  return res.json();
+}
