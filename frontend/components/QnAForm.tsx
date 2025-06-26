@@ -9,6 +9,7 @@ interface Answer {
 interface QARecord {
   question: string
   answer: string
+  references: string[]
 }
 
 export default function QnAForm() {
@@ -24,9 +25,16 @@ export default function QnAForm() {
     try {
       const data = await askQuestion(question)
       setResponse(data)
-      setHistory([{ question, answer: data.answer }, ...history])
+      setHistory([
+        { question, answer: data.answer, references: data.references },
+        ...history,
+      ])
     } catch (err) {
-      const errRecord = { question, answer: 'Error fetching answer' }
+      const errRecord = {
+        question,
+        answer: 'Error fetching answer',
+        references: [],
+      }
       setResponse({ answer: errRecord.answer, references: [] })
       setHistory([errRecord, ...history])
     } finally {
@@ -82,9 +90,25 @@ export default function QnAForm() {
           <p className="font-semibold">回答記錄:</p>
           <ul className="space-y-1">
             {history.map((h, idx) => (
-              <li key={idx} className="border p-2 rounded">
-                <p className="text-sm font-semibold">Q: {h.question}</p>
+              <li key={idx} className="border p-2 rounded space-y-1">
+                <div className="flex justify-between">
+                  <p className="text-sm font-semibold">Q: {h.question}</p>
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(h.answer)}
+                    className="text-sm text-blue-600 underline"
+                  >
+                    複製回答
+                  </button>
+                </div>
                 <p className="text-sm">A: {h.answer}</p>
+                {h.references.length > 0 && (
+                  <ul className="list-disc list-inside text-sm mt-1 space-y-0.5">
+                    {h.references.map((ref, rIdx) => (
+                      <li key={rIdx}>{ref}</li>
+                    ))}
+                  </ul>
+                )}
               </li>
             ))}
           </ul>
