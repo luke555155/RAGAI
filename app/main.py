@@ -90,7 +90,7 @@ def get_embedding(text: str) -> List[float]:
         raise HTTPException(status_code=500, detail=f"Embedding service error: {exc}") from exc
 
 
-def upload_to_qdrant(document_id: str, chunks: List[str], file_name: str) -> None:
+def upload_to_qdrant(document_id: str, chunks: List[str], file_name: str, summary: str) -> None:
     """計算每個區塊 embedding 並寫入 Qdrant"""
     points = []
     upload_time = datetime.utcnow().isoformat()
@@ -106,6 +106,7 @@ def upload_to_qdrant(document_id: str, chunks: List[str], file_name: str) -> Non
                     "chunk_index": idx,
                     "file_name": file_name,
                     "upload_time": upload_time,
+                    "summary": summary,
                 },
             }
         )
@@ -133,12 +134,53 @@ async def upload(file: UploadFile = File(...)):
 
     chunks = split_text(text)
     document_id = str(uuid4())
-    upload_to_qdrant(document_id, chunks, file.filename)
-    return JSONResponse({"document_id": document_id, "segments_uploaded": len(chunks)})
+    full_text = "\n".join(chunks)
+    try:
+        resp = requests.post(
+            OLLAMA_GENERATE_URL,
+            json={
+                "model": OLLAMA_LLM_MODEL,
+                "prompt": f"請根據以下內容提供一段摘要：\n{full_text}",
+            },
+        )
+        resp.raise_for_status()
+        summary = resp.json().get("response", "")
+    except Exception as exc:
+        logger.exception("Ollama summary error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Ollama service error: {exc}") from exc
+
+    upload_to_qdrant(document_id, chunks, file.filename, summary)
+    return JSONResponse({"document_id": document_id, "segments_uploaded": len(chunks), "summary": summary})
 
 
 class AskRequest(BaseModel):
     question: str
+
+
+@app.get("/api/docs")
+async def list_docs():
+    """回傳所有文件資訊"""
+    try:
+        docs = qdrant_client.list_documents()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("List docs error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"documents": docs}
+
+
+@app.get("/api/docs/{document_id}")
+async def get_document(document_id: str):
+    """取得指定文件的段落內容"""
+    try:
+        segments = qdrant_client.get_segments_by_doc(document_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Get document error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"document_id": document_id, "segments": segments}
 
 
 def rerank(question: str, results: List[dict]) -> List[dict]:
