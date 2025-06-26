@@ -11,9 +11,16 @@ Run the server:
 ```bash
 uvicorn app.main:app --reload
 ```
-The service uses `OLLAMA_EMBEDDING_URL`, `OLLAMA_GENERATE_URL`, `OLLAMA_MODEL`,
-`OLLAMA_LLM_MODEL`, and `QDRANT_URL` environment variables. Defaults are defined in `app/main.py` and can be
-overridden.
+Create a `.env` file to configure the service:
+```
+OLLAMA_BASE_URL=http://localhost:11434
+QDRANT_HOST=localhost
+QDRANT_PORT=6333
+EMBEDDING_MODEL=nomic-embed-text
+LLM_MODEL=llama2
+```
+These values are loaded via `python-dotenv` and override the defaults defined in
+`app/main.py`.
 
 ## Upload Endpoint
 `POST /api/upload`
