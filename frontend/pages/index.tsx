@@ -7,6 +7,7 @@ interface Doc {
   document_id: string
   file_name: string
   upload_time: string
+  summary?: string
 }
 
 interface Segment {
@@ -35,16 +36,21 @@ export default function Home() {
       <UploadForm />
       <div className="space-y-2">
         <h2 className="text-xl font-semibold">檔案紀錄</h2>
-        <ul className="list-disc list-inside space-y-1">
+        <ul className="list-disc list-inside space-y-2">
           {docs.map(doc => (
-            <li key={doc.document_id}>
+            <li key={doc.document_id} className="space-y-0.5">
               <button
-                className="text-blue-600 underline"
+                className="text-blue-600 underline font-semibold"
                 onClick={() => handleSelect(doc.document_id)}
               >
-                {doc.document_id} (
-                {new Date(doc.upload_time).toLocaleString()})
+                {doc.file_name}
               </button>
+              {doc.summary && (
+                <p className="text-sm text-gray-500">{doc.summary}</p>
+              )}
+              <p className="text-xs text-gray-600">
+                {new Date(doc.upload_time).toLocaleString()} | ID: {doc.document_id}
+              </p>
             </li>
           ))}
         </ul>
