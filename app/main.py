@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 from .services.qdrant_client import QdrantClient
+from .upload import upload_document, load_doc_index
 
 app = FastAPI()
 
@@ -90,33 +91,6 @@ def get_embedding(text: str) -> List[float]:
         raise HTTPException(status_code=500, detail=f"Embedding service error: {exc}") from exc
 
 
-def upload_to_qdrant(document_id: str, chunks: List[str], file_name: str, summary: str) -> None:
-    """計算每個區塊 embedding 並寫入 Qdrant"""
-    points = []
-    upload_time = datetime.utcnow().isoformat()
-    for idx, chunk in enumerate(chunks):
-        embedding = get_embedding(chunk)
-        points.append(
-            {
-                "id": str(uuid4()),
-                "vector": embedding,
-                "payload": {
-                    "document_id": document_id,
-                    "text": chunk,
-                    "chunk_index": idx,
-                    "file_name": file_name,
-                    "upload_time": upload_time,
-                    "summary": summary,
-                },
-            }
-        )
-    try:
-        qdrant_client.upload_points(points)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("Upload to Qdrant error: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Qdrant upload error: {exc}") from exc
 
 
 
@@ -134,22 +108,7 @@ async def upload(file: UploadFile = File(...)):
 
     chunks = split_text(text)
     document_id = str(uuid4())
-    full_text = "\n".join(chunks)
-    try:
-        resp = requests.post(
-            OLLAMA_GENERATE_URL,
-            json={
-                "model": OLLAMA_LLM_MODEL,
-                "prompt": f"請根據以下內容提供一段摘要：\n{full_text}",
-            },
-        )
-        resp.raise_for_status()
-        summary = resp.json().get("response", "")
-    except Exception as exc:
-        logger.exception("Ollama summary error: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Ollama service error: {exc}") from exc
-
-    upload_to_qdrant(document_id, chunks, file.filename, summary)
+    summary = upload_document(document_id, chunks, file.filename)
     return JSONResponse({"document_id": document_id, "segments_uploaded": len(chunks), "summary": summary})
 
 
@@ -162,6 +121,11 @@ async def list_docs():
     """回傳所有文件資訊"""
     try:
         docs = qdrant_client.list_documents()
+        summaries = load_doc_index()
+        for doc in docs:
+            doc_id = doc.get("document_id")
+            if doc_id in summaries:
+                doc["summary"] = summaries[doc_id]
     except HTTPException:
         raise
     except Exception as exc:
