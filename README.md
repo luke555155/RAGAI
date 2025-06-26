@@ -18,9 +18,9 @@ overridden.
 ## Upload Endpoint
 `POST /api/upload`
 
-Accepts a PDF or DOCX file and stores the text segments in Qdrant. The response contains the generated `document_id` and the number of segments uploaded.
+Accepts a PDF or DOCX file and stores the text segments in Qdrant. Each chunk is stored with `chunk_index`, `file_name` and `upload_time` metadata. The response contains the generated `document_id` and the number of segments uploaded.
 
 ## Ask Endpoint
 `POST /api/ask`
 
-Receives a question and retrieves the top 3 relevant segments from Qdrant. The segments are used as context for Ollama to generate an answer. The response includes the answer text and referenced segments.
+Receives a question and retrieves the top 5 relevant segments from Qdrant. A `rerank` function sorts them and the top 3 are used as context for Ollama to generate an answer. The response includes the answer text and referenced segments.
