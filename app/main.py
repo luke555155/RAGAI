@@ -1,6 +1,7 @@
 from uuid import uuid4
 from typing import List
 import io
+import os
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
@@ -11,10 +12,10 @@ import requests
 
 app = FastAPI()
 
-OLLAMA_EMBEDDING_URL = "http://localhost:11434/api/embeddings"
-QDRANT_URL = "http://localhost:6333"
+OLLAMA_EMBEDDING_URL = os.getenv("OLLAMA_EMBEDDING_URL", "http://localhost:11434/api/embeddings")
+QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION_NAME = "documents"
-OLLAMA_MODEL = "nomic-embed-text"
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
 
 
 def ensure_collection() -> None:
