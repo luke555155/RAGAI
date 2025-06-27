@@ -6,6 +6,8 @@ interface Reference {
   text: string
   chunk_index?: number
   score?: number
+  rank?: number
+  filtered?: boolean
 }
 
 interface Answer {
@@ -34,6 +36,24 @@ export default function QnAForm() {
     if (score >= 0.8) return 'text-green-600'
     if (score >= 0.5) return 'text-yellow-600'
     return 'text-red-600'
+  }
+
+  function relevanceTag(ref: Reference) {
+    if (ref.rank !== undefined) {
+      return (
+        <span className="ml-1 px-1 text-xs bg-purple-200 text-purple-800 rounded">
+          Top {ref.rank}
+        </span>
+      )
+    }
+    if (ref.score !== undefined) {
+      return (
+        <span className="ml-1 px-1 text-xs bg-gray-200 text-gray-800 rounded">
+          {ref.score.toFixed(2)}
+        </span>
+      )
+    }
+    return null
   }
 
   function animateAnswer(text: string) {
@@ -151,7 +171,11 @@ export default function QnAForm() {
               <ul className="list-disc list-inside space-y-1">
                 {response.references.map((ref, idx) => (
                   <li key={idx} className={scoreColor(ref.score)}>
-                    [{ref.chunk_index}] (score: {ref.score?.toFixed(2)}) {ref.text}
+                    [{ref.chunk_index}] {ref.text}
+                    {relevanceTag(ref)}
+                    {ref.filtered && (
+                      <span className="ml-1 text-xs text-red-500">filtered</span>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -189,7 +213,11 @@ export default function QnAForm() {
                   <ul className="list-disc list-inside text-sm mt-1 space-y-0.5">
                     {h.references.map((ref, rIdx) => (
                       <li key={rIdx} className={scoreColor(ref.score)}>
-                        [{ref.chunk_index}] (score: {ref.score?.toFixed(2)}) {ref.text}
+                        [{ref.chunk_index}] {ref.text}
+                        {relevanceTag(ref)}
+                        {ref.filtered && (
+                          <span className="ml-1 text-xs text-red-500">filtered</span>
+                        )}
                       </li>
                     ))}
                   </ul>

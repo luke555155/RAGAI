@@ -27,6 +27,7 @@ from .upload import (
     save_doc_index,
     remove_doc_entry,
 )
+from .reranker import rerank_passages, cosine_similarity
 
 app = FastAPI()
 
@@ -39,6 +40,8 @@ QDRANT_URL = f"http://{QDRANT_HOST}:{QDRANT_PORT}"
 COLLECTION_NAME = "documents"
 OLLAMA_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
 OLLAMA_LLM_MODEL = os.getenv("LLM_MODEL", "llama2")
+RERANK_MODE = os.getenv("RERANK_MODE", "llm")
+SEARCH_LIMIT = int(os.getenv("SEARCH_LIMIT", "8"))
 
 MAX_CONTEXT_TOKENS = int(os.getenv("MAX_CONTEXT_TOKENS", "1500"))
 CACHE_TTL = int(os.getenv("ASK_CACHE_TTL", "300"))
@@ -134,10 +137,18 @@ class AskRequest(BaseModel):
     document_ids: List[str] | None = None
     style: str | None = None
     prompt_template: str | None = None
+    rerank_mode: str | None = None
+    include_filtered: bool | None = True
 
 
 class DeleteDocRequest(BaseModel):
     document_id: str
+
+
+class RankTestRequest(BaseModel):
+    question: str
+    passages: List[str]
+    mode: str | None = None
 
 
 @app.get("/api/docs")
@@ -221,9 +232,29 @@ async def resummarize_document(document_id: str):
     return {"document_id": document_id, "summary": summary}
 
 
-def rerank(question: str, results: List[dict]) -> List[dict]:
-    """預留重新排序介面，目前僅依照 score 由高到低排列"""
-    return sorted(results, key=lambda r: r.get("score", 0), reverse=True)
+@app.post("/api/rank_test")
+async def rank_test(req: RankTestRequest):
+    """Return ranking results for provided passages"""
+    try:
+        q_emb = get_embedding(req.question)
+        passages = []
+        for idx, text in enumerate(req.passages):
+            emb = get_embedding(text)
+            score = cosine_similarity(q_emb, emb)
+            passages.append({"id": str(idx), "payload": {"text": text}, "vector": emb, "score": score})
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Rank test error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    ranked = rerank_passages(req.question, passages, mode=req.mode or RERANK_MODE)
+    refs = [
+        {"text": p["payload"].get("text", ""), "rank": p.get("rank"), "score": p.get("score"), "filtered": p.get("filtered")}
+        for p in ranked
+    ]
+    return {"answer": "", "references": refs}
+
+
 
 
 @app.post("/api/ask")
@@ -234,6 +265,8 @@ async def ask(req: AskRequest):
         tuple(req.document_ids or ([req.document_id] if req.document_id else [])),
         req.style,
         req.prompt_template,
+        req.rerank_mode,
+        req.include_filtered,
     )
     cached = ASK_CACHE.get(cache_key)
     if cached and time() - cached["ts"] < CACHE_TTL:
@@ -243,7 +276,7 @@ async def ask(req: AskRequest):
     try:
         results = qdrant_client.search(
             q_embedding,
-            limit=5,
+            limit=SEARCH_LIMIT,
             document_id=req.document_id,
             document_ids=req.document_ids,
         )
@@ -253,11 +286,16 @@ async def ask(req: AskRequest):
         logger.exception("Search Qdrant error: %s", exc)
         raise HTTPException(status_code=500, detail=f"Qdrant search error: {exc}") from exc
 
-    ranked_all = rerank(req.question, results)
+    ranked_all = rerank_passages(req.question, results, mode=req.rerank_mode or RERANK_MODE)
+    for idx, r in enumerate(ranked_all, 1):
+        if (req.rerank_mode or RERANK_MODE) == "llm" and idx > 5:
+            r["filtered"] = True
     context_parts = []
     used_results = []
     tokens = 0
     for r in ranked_all:
+        if r.get("filtered") and not req.include_filtered:
+            continue
         text = r["payload"].get("text", "")
         t = count_tokens(text)
         if tokens + t > MAX_CONTEXT_TOKENS:
@@ -291,6 +329,8 @@ async def ask(req: AskRequest):
             "text": r["payload"].get("text", ""),
             "chunk_index": r["payload"].get("chunk_index"),
             "score": r.get("score"),
+            "rank": r.get("rank"),
+            "filtered": r.get("filtered"),
         }
         for r in used_results
     ]
