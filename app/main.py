@@ -3,6 +3,7 @@ from typing import List
 from time import time
 import io
 import re
+import json
 import logging
 from datetime import datetime
 
@@ -151,6 +152,13 @@ class RankTestRequest(BaseModel):
     mode: str | None = None
 
 
+class ManualAskRequest(BaseModel):
+    question: str
+    segments: List[str]
+    style: str | None = None
+    prompt_template: str | None = None
+
+
 @app.get("/api/docs")
 async def list_docs():
     """回傳所有文件資訊"""
@@ -272,6 +280,7 @@ async def ask(req: AskRequest):
     if cached and time() - cached["ts"] < CACHE_TTL:
         return cached["data"]
 
+    start_time = time()
     q_embedding = get_embedding(req.question)
     try:
         results = qdrant_client.search(
@@ -334,6 +343,74 @@ async def ask(req: AskRequest):
         }
         for r in used_results
     ]
-    data = {"answer": answer, "references": references}
+    elapsed = time() - start_time
+    data = {"answer": answer, "references": references, "elapsed": elapsed}
+    try:
+        os.makedirs("logs", exist_ok=True)
+        with open("logs/ask_log.jsonl", "a", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "question": req.question,
+                    "document_ids": req.document_ids
+                    or ([req.document_id] if req.document_id else []),
+                    "style": req.style,
+                    "rerank_mode": req.rerank_mode or RERANK_MODE,
+                    "answer": answer,
+                    "references": references,
+                    "elapsed": elapsed,
+                },
+                f,
+                ensure_ascii=False,
+            )
+            f.write("\n")
+    except Exception as exc:
+        logger.warning("Failed to log ask: %s", exc)
     ASK_CACHE[cache_key] = {"ts": time(), "data": data}
     return data
+
+
+@app.get("/api/ask_log")
+async def get_ask_log():
+    """Return logged ask records"""
+    try:
+        entries = []
+        if os.path.exists("logs/ask_log.jsonl"):
+            with open("logs/ask_log.jsonl", "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        return {"logs": entries[::-1]}
+    except Exception as exc:
+        logger.exception("Read ask log error: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to read log") from exc
+
+
+@app.post("/api/manual-ask")
+async def manual_ask(req: ManualAskRequest):
+    """Answer a question using manually provided context"""
+    start_time = time()
+    context = "\n".join(req.segments)
+    template = (
+        req.prompt_template
+        or "Answer the question based on the context below.\n{style}\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
+    )
+    prompt = template.format(context=context, question=req.question, style=req.style or "")
+    try:
+        resp = requests.post(
+            OLLAMA_GENERATE_URL,
+            json={"model": OLLAMA_LLM_MODEL, "prompt": prompt},
+        )
+        resp.raise_for_status()
+        answer = resp.json().get("response", "")
+    except Exception as exc:
+        logger.exception("Ollama service error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Ollama service error: {exc}") from exc
+    elapsed = time() - start_time
+    refs = [{"text": s} for s in req.segments]
+    return {"answer": answer, "references": refs, "elapsed": elapsed}
