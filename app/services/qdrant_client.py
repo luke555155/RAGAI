@@ -44,12 +44,17 @@ class QdrantClient:
             logger.exception("Upload points error: %s", exc)
             raise HTTPException(status_code=500, detail=f"Qdrant error: {exc}") from exc
 
-    def search(self, vector: List[float], limit: int = 3) -> List[Dict]:
-        """根據向量進行相似度搜尋"""
+    def search(self, vector: List[float], limit: int = 3, document_id: Optional[str] = None) -> List[Dict]:
+        """根據向量進行相似度搜尋，可依 document_id 篩選"""
         try:
+            body: Dict = {"vector": vector, "limit": limit}
+            if document_id:
+                body["filter"] = {
+                    "must": [{"key": "document_id", "match": {"value": document_id}}]
+                }
             resp = requests.post(
                 f"{self.url}/collections/{self.collection}/points/search",
-                json={"vector": vector, "limit": limit},
+                json=body,
             )
             if resp.status_code != 200:
                 raise HTTPException(status_code=500, detail="Qdrant search error")
@@ -131,4 +136,24 @@ class QdrantClient:
             return segments
         except Exception as exc:
             logger.exception("Get segments error: %s", exc)
+            raise HTTPException(status_code=500, detail=f"Qdrant error: {exc}") from exc
+
+    def delete_by_document(self, document_id: str) -> None:
+        """刪除指定文件的所有向量"""
+        try:
+            self.ensure_collection()
+            body = {
+                "filter": {
+                    "must": [{"key": "document_id", "match": {"value": document_id}}]
+                }
+            }
+            resp = requests.post(
+                f"{self.url}/collections/{self.collection}/points/delete?wait=true",
+                json=body,
+                timeout=30,
+            )
+            if resp.status_code not in (200, 202):
+                raise HTTPException(status_code=500, detail="Failed to delete from Qdrant")
+        except Exception as exc:
+            logger.exception("Delete document error: %s", exc)
             raise HTTPException(status_code=500, detail=f"Qdrant error: {exc}") from exc

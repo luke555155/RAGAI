@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { askQuestion } from '@/utils/api'
+import { useDoc } from './DocContext'
 
 interface Answer {
   answer: string
@@ -10,6 +11,7 @@ interface QARecord {
   question: string
   answer: string
   references: string[]
+  documentId?: string | null
 }
 
 export default function QnAForm() {
@@ -17,16 +19,30 @@ export default function QnAForm() {
   const [response, setResponse] = useState<Answer | null>(null)
   const [loading, setLoading] = useState(false)
   const [history, setHistory] = useState<QARecord[]>([])
+  const { selectedDocId } = useDoc()
+
+  useEffect(() => {
+    const saved = localStorage.getItem('qaHistory')
+    if (saved) {
+      try {
+        setHistory(JSON.parse(saved))
+      } catch {}
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem('qaHistory', JSON.stringify(history))
+  }, [history])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!question) return
     setLoading(true)
     try {
-      const data = await askQuestion(question)
+      const data = await askQuestion(question, selectedDocId || undefined)
       setResponse(data)
       setHistory([
-        { question, answer: data.answer, references: data.references },
+        { question, answer: data.answer, references: data.references, documentId: selectedDocId },
         ...history,
       ])
     } catch (err) {
@@ -34,9 +50,26 @@ export default function QnAForm() {
         question,
         answer: 'Error fetching answer',
         references: [],
+        documentId: selectedDocId,
       }
       setResponse({ answer: errRecord.answer, references: [] })
       setHistory([errRecord, ...history])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleReask(q: string, docId?: string | null) {
+    setLoading(true)
+    try {
+      const data = await askQuestion(q, docId || undefined)
+      setResponse(data)
+      setHistory([
+        { question: q, answer: data.answer, references: data.references, documentId: docId },
+        ...history,
+      ])
+    } catch {
+      setResponse({ answer: 'Error fetching answer', references: [] })
     } finally {
       setLoading(false)
     }
@@ -93,13 +126,22 @@ export default function QnAForm() {
               <li key={idx} className="border p-2 rounded space-y-1">
                 <div className="flex justify-between">
                   <p className="text-sm font-semibold">Q: {h.question}</p>
-                  <button
-                    type="button"
-                    onClick={() => navigator.clipboard.writeText(h.answer)}
-                    className="text-sm text-blue-600 underline"
-                  >
-                    複製回答
-                  </button>
+                  <div className="space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => handleReask(h.question, h.documentId)}
+                      className="text-sm text-green-700 underline"
+                    >
+                      重新查詢
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(h.answer)}
+                      className="text-sm text-blue-600 underline"
+                    >
+                      複製回答
+                    </button>
+                  </div>
                 </div>
                 <p className="text-sm">A: {h.answer}</p>
                 {h.references.length > 0 && (
