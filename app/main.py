@@ -5,7 +5,7 @@ import re
 import logging
 from datetime import datetime
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -20,7 +20,12 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 from .services.qdrant_client import QdrantClient
-from .upload import upload_document, load_doc_index, remove_doc_summary
+from .upload import (
+    upload_document,
+    load_doc_index,
+    save_doc_index,
+    remove_doc_entry,
+)
 
 app = FastAPI()
 
@@ -96,7 +101,7 @@ def get_embedding(text: str) -> List[float]:
 
 
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...)):
+async def upload(file: UploadFile = File(...), tags: str = Form("")):
     """上傳檔案並分割後寫入 Qdrant"""
     content = await file.read()
     if file.content_type == "application/pdf":
@@ -108,7 +113,8 @@ async def upload(file: UploadFile = File(...)):
 
     chunks = split_text(text)
     document_id = str(uuid4())
-    summary = upload_document(document_id, chunks, file.filename)
+    tag_list = [t.strip() for t in tags.split(',') if t.strip()]
+    summary = upload_document(document_id, chunks, file.filename, tag_list)
     return JSONResponse({"document_id": document_id, "segments_uploaded": len(chunks), "summary": summary})
 
 
@@ -130,7 +136,14 @@ async def list_docs():
         for doc in docs:
             doc_id = doc.get("document_id")
             if doc_id in summaries:
-                doc["summary"] = summaries[doc_id]
+                entry = summaries[doc_id]
+                if isinstance(entry, dict):
+                    doc["summary"] = entry.get("summary")
+                    doc["tags"] = entry.get("tags", [])
+                else:
+                    # backward compatibility if index contains only summary
+                    doc["summary"] = entry
+                    doc["tags"] = []
     except HTTPException:
         raise
     except Exception as exc:
@@ -157,13 +170,42 @@ async def delete_document(req: DeleteDocRequest):
     """刪除指定文件的所有資料"""
     try:
         qdrant_client.delete_by_document(req.document_id)
-        remove_doc_summary(req.document_id)
+        remove_doc_entry(req.document_id)
     except HTTPException:
         raise
     except Exception as exc:
         logger.exception("Delete document error: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"status": "deleted"}
+
+
+@app.post("/api/docs/{document_id}/resummarize")
+async def resummarize_document(document_id: str):
+    """重新取得段落並產生摘要"""
+    try:
+        segments = qdrant_client.get_segments_by_doc(document_id)
+        if not segments:
+            raise HTTPException(status_code=404, detail="Document not found")
+        context = "\n".join(s.get("text", "") for s in segments)
+        resp = requests.post(
+            OLLAMA_GENERATE_URL,
+            json={"model": OLLAMA_LLM_MODEL, "prompt": f"請根據以下內容提供一段摘要：\n{context}"},
+        )
+        resp.raise_for_status()
+        summary = resp.json().get("response", "")
+        index = load_doc_index()
+        entry = index.get(document_id, {})
+        entry["summary"] = summary
+        if "tags" not in entry:
+            entry["tags"] = []
+        index[document_id] = entry
+        save_doc_index(index)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Resummarize error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"document_id": document_id, "summary": summary}
 
 
 def rerank(question: str, results: List[dict]) -> List[dict]:
@@ -198,4 +240,12 @@ async def ask(req: AskRequest):
     except Exception as exc:
         logger.exception("Ollama service error: %s", exc)
         raise HTTPException(status_code=500, detail=f"Ollama service error: {exc}") from exc
-    return {"answer": answer, "references": [r["payload"] for r in ranked]}
+    references = [
+        {
+            "text": r["payload"].get("text", ""),
+            "chunk_index": r["payload"].get("chunk_index"),
+            "score": r.get("score"),
+        }
+        for r in ranked
+    ]
+    return {"answer": answer, "references": references}

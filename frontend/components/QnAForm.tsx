@@ -2,24 +2,41 @@ import { useState, useEffect } from 'react'
 import { askQuestion } from '@/utils/api'
 import { useDoc } from './DocContext'
 
+interface Reference {
+  text: string
+  chunk_index?: number
+  score?: number
+}
+
 interface Answer {
   answer: string
-  references: string[]
+  references: Reference[]
 }
 
 interface QARecord {
   question: string
   answer: string
-  references: string[]
+  references: Reference[]
   documentId?: string | null
 }
 
 export default function QnAForm() {
   const [question, setQuestion] = useState('')
   const [response, setResponse] = useState<Answer | null>(null)
+  const [displayedAnswer, setDisplayedAnswer] = useState('')
   const [loading, setLoading] = useState(false)
   const [history, setHistory] = useState<QARecord[]>([])
   const { selectedDocId } = useDoc()
+
+  function animateAnswer(text: string) {
+    setDisplayedAnswer('')
+    let i = 0
+    const timer = setInterval(() => {
+      setDisplayedAnswer(prev => prev + text.charAt(i))
+      i += 1
+      if (i >= text.length) clearInterval(timer)
+    }, 30)
+  }
 
   useEffect(() => {
     const saved = localStorage.getItem('qaHistory')
@@ -41,6 +58,7 @@ export default function QnAForm() {
     try {
       const data = await askQuestion(question, selectedDocId || undefined)
       setResponse(data)
+      animateAnswer(data.answer)
       setHistory([
         { question, answer: data.answer, references: data.references, documentId: selectedDocId },
         ...history,
@@ -64,6 +82,7 @@ export default function QnAForm() {
     try {
       const data = await askQuestion(q, docId || undefined)
       setResponse(data)
+      animateAnswer(data.answer)
       setHistory([
         { question: q, answer: data.answer, references: data.references, documentId: docId },
         ...history,
@@ -93,6 +112,11 @@ export default function QnAForm() {
           {loading ? 'Asking...' : 'Ask'}
         </button>
       </form>
+      {loading && (
+        <div className="flex justify-center">
+          <div className="w-6 h-6 border-4 border-gray-300 border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
       {response && (
         <div className="space-y-2 bg-gray-100 p-4 rounded">
           <div className="flex justify-between">
@@ -105,13 +129,15 @@ export default function QnAForm() {
               複製回答
             </button>
           </div>
-          <p>{response.answer}</p>
+          <p>{displayedAnswer}</p>
           {response.references.length > 0 && (
             <div>
               <p className="font-semibold mt-2">References:</p>
               <ul className="list-disc list-inside space-y-1">
                 {response.references.map((ref, idx) => (
-                  <li key={idx}>{ref}</li>
+                  <li key={idx}>
+                    [{ref.chunk_index}] (score: {ref.score?.toFixed(2)}) {ref.text}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -147,7 +173,9 @@ export default function QnAForm() {
                 {h.references.length > 0 && (
                   <ul className="list-disc list-inside text-sm mt-1 space-y-0.5">
                     {h.references.map((ref, rIdx) => (
-                      <li key={rIdx}>{ref}</li>
+                      <li key={rIdx}>
+                        [{ref.chunk_index}] (score: {ref.score?.toFixed(2)}) {ref.text}
+                      </li>
                     ))}
                   </ul>
                 )}

@@ -46,12 +46,14 @@ def save_doc_index(index: dict) -> None:
     with open(DOC_INDEX_FILE, "w", encoding="utf-8") as f:
         json.dump(index, f, ensure_ascii=False, indent=2)
 
-def append_doc_summary(document_id: str, summary: str) -> None:
+def append_doc_entry(document_id: str, summary: str, tags: list[str]) -> None:
+    """Add or update document entry with summary and tags"""
     index = load_doc_index()
-    index[document_id] = summary
+    index[document_id] = {"summary": summary, "tags": tags}
     save_doc_index(index)
 
-def remove_doc_summary(document_id: str) -> None:
+def remove_doc_entry(document_id: str) -> None:
+    """Remove document entry from index"""
     index = load_doc_index()
     if document_id in index:
         index.pop(document_id, None)
@@ -72,7 +74,7 @@ def get_embedding(text: str) -> List[float]:
         logger.exception("Embedding service error: %s", exc)
         raise HTTPException(status_code=500, detail=f"Embedding service error: {exc}") from exc
 
-def upload_document(document_id: str, chunks: List[str], file_name: str) -> str:
+def upload_document(document_id: str, chunks: List[str], file_name: str, tags: list[str]) -> str:
     points = []
     upload_time = datetime.utcnow().isoformat()
     for idx, chunk in enumerate(chunks):
@@ -102,5 +104,5 @@ def upload_document(document_id: str, chunks: List[str], file_name: str) -> str:
     except Exception as exc:
         logger.exception("Ollama summary error: %s", exc)
         raise HTTPException(status_code=500, detail=f"Ollama service error: {exc}") from exc
-    append_doc_summary(document_id, summary)
+    append_doc_entry(document_id, summary, tags)
     return summary

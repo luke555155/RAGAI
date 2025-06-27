@@ -1,6 +1,7 @@
-export async function uploadFile(file: File) {
+export async function uploadFile(file: File, tags: string) {
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('tags', tags);
 
   const res = await fetch('/api/upload', {
     method: 'POST',
@@ -52,6 +53,14 @@ export async function deleteDoc(id: string) {
     },
     body: JSON.stringify({ document_id: id }),
   });
+  if (!res.ok) {
+    throw new Error('Request failed');
+  }
+  return res.json();
+}
+
+export async function resummarizeDoc(id: string) {
+  const res = await fetch(`/api/docs/${id}/resummarize`, { method: 'POST' });
   if (!res.ok) {
     throw new Error('Request failed');
   }
