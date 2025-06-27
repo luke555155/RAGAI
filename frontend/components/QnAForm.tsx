@@ -13,6 +13,7 @@ interface Reference {
 interface Answer {
   answer: string
   references: Reference[]
+  elapsed?: number
 }
 
 interface QARecord {
@@ -20,6 +21,7 @@ interface QARecord {
   answer: string
   references: Reference[]
   documentIds?: string[]
+  elapsed?: number
 }
 
 export default function QnAForm() {
@@ -29,6 +31,7 @@ export default function QnAForm() {
   const [loading, setLoading] = useState(false)
   const [history, setHistory] = useState<QARecord[]>([])
   const [style, setStyle] = useState('')
+  const [elapsed, setElapsed] = useState(0)
   const { selectedDocIds } = useDoc()
 
   function scoreColor(score?: number) {
@@ -86,9 +89,10 @@ export default function QnAForm() {
     try {
       const data = await askQuestion(question, selectedDocIds, style)
       setResponse(data)
+      setElapsed(data.elapsed || 0)
       animateAnswer(data.answer)
       setHistory([
-        { question, answer: data.answer, references: data.references, documentIds: selectedDocIds },
+        { question, answer: data.answer, references: data.references, documentIds: selectedDocIds, elapsed: data.elapsed },
         ...history,
       ])
     } catch (err) {
@@ -110,9 +114,10 @@ export default function QnAForm() {
     try {
       const data = await askQuestion(q, docIds || [], style)
       setResponse(data)
+      setElapsed(data.elapsed || 0)
       animateAnswer(data.answer)
       setHistory([
-        { question: q, answer: data.answer, references: data.references, documentIds: docIds },
+        { question: q, answer: data.answer, references: data.references, documentIds: docIds, elapsed: data.elapsed },
         ...history,
       ])
     } catch {
@@ -132,13 +137,17 @@ export default function QnAForm() {
           className="flex-1 border rounded p-2"
           placeholder="Ask a question"
         />
-        <input
-          type="text"
+        <select
           value={style}
           onChange={e => setStyle(e.target.value)}
-          className="flex-1 border rounded p-2"
-          placeholder="Style (optional)"
-        />
+          className="border rounded p-2"
+        >
+          <option value="">預設</option>
+          <option value="專業">專業</option>
+          <option value="口語">口語</option>
+          <option value="摘要">摘要</option>
+          <option value="條列式">條列式</option>
+        </select>
         <button
           type="submit"
           className="px-4 py-2 bg-green-600 text-white rounded"
@@ -164,6 +173,7 @@ export default function QnAForm() {
               複製回答
             </button>
           </div>
+          <p className="text-sm text-gray-600">Time: {elapsed.toFixed(2)}s</p>
           <p>{displayedAnswer}</p>
           {response.references.length > 0 && (
             <div>
@@ -208,6 +218,9 @@ export default function QnAForm() {
                     </button>
                   </div>
                 </div>
+                {h.elapsed !== undefined && (
+                  <p className="text-xs text-gray-600">Time: {h.elapsed.toFixed(2)}s</p>
+                )}
                 <p className="text-sm">A: {h.answer}</p>
                 {h.references.length > 0 && (
                   <ul className="list-disc list-inside text-sm mt-1 space-y-0.5">

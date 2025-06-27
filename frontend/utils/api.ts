@@ -30,6 +30,30 @@ export async function askQuestion(question: string, documentIds: string[] = [], 
   return res.json();
 }
 
+export async function manualAsk(question: string, segments: string[], style?: string) {
+  const body: Record<string, unknown> = { question, segments };
+  if (style) body.style = style;
+  const res = await fetch('/api/manual-ask', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error('Request failed');
+  }
+  return res.json();
+}
+
+export async function fetchAskLog() {
+  const res = await fetch('/api/ask_log');
+  if (!res.ok) {
+    throw new Error('Request failed');
+  }
+  return res.json();
+}
+
 export async function fetchDocs() {
   const res = await fetch('/api/docs');
   if (!res.ok) {
