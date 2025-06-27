@@ -194,3 +194,7 @@ cython_debug/
 .cursorindexingignore
 # Node
 frontend/node_modules/
+
+# Ollama model directory
+ollama/*
+!ollama/.gitkeep
