@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 from .services.qdrant_client import QdrantClient
-from .upload import upload_document, load_doc_index
+from .upload import upload_document, load_doc_index, remove_doc_summary
 
 app = FastAPI()
 
@@ -114,6 +114,11 @@ async def upload(file: UploadFile = File(...)):
 
 class AskRequest(BaseModel):
     question: str
+    document_id: str | None = None
+
+
+class DeleteDocRequest(BaseModel):
+    document_id: str
 
 
 @app.get("/api/docs")
@@ -147,6 +152,20 @@ async def get_document(document_id: str):
     return {"document_id": document_id, "segments": segments}
 
 
+@app.delete("/api/docs")
+async def delete_document(req: DeleteDocRequest):
+    """刪除指定文件的所有資料"""
+    try:
+        qdrant_client.delete_by_document(req.document_id)
+        remove_doc_summary(req.document_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Delete document error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"status": "deleted"}
+
+
 def rerank(question: str, results: List[dict]) -> List[dict]:
     """預留重新排序介面，目前僅依照 score 由高到低排列"""
     return sorted(results, key=lambda r: r.get("score", 0), reverse=True)
@@ -157,7 +176,7 @@ async def ask(req: AskRequest):
     """根據問題向 Qdrant 取得相關段落並呼叫 LLM 回答"""
     q_embedding = get_embedding(req.question)
     try:
-        results = qdrant_client.search(q_embedding, limit=5)
+        results = qdrant_client.search(q_embedding, limit=5, document_id=req.document_id)
     except HTTPException:
         raise
     except Exception as exc:

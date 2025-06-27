@@ -51,6 +51,12 @@ def append_doc_summary(document_id: str, summary: str) -> None:
     index[document_id] = summary
     save_doc_index(index)
 
+def remove_doc_summary(document_id: str) -> None:
+    index = load_doc_index()
+    if document_id in index:
+        index.pop(document_id, None)
+        save_doc_index(index)
+
 def get_embedding(text: str) -> List[float]:
     try:
         resp = requests.post(

@@ -12,13 +12,15 @@ export async function uploadFile(file: File) {
   return res.json();
 }
 
-export async function askQuestion(question: string) {
+export async function askQuestion(question: string, documentId?: string) {
+  const body: Record<string, unknown> = { question }
+  if (documentId) body.document_id = documentId
   const res = await fetch('/api/ask', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     throw new Error('Request failed');
@@ -36,6 +38,20 @@ export async function fetchDocs() {
 
 export async function fetchDocumentSegments(id: string) {
   const res = await fetch(`/api/docs/${id}`);
+  if (!res.ok) {
+    throw new Error('Request failed');
+  }
+  return res.json();
+}
+
+export async function deleteDoc(id: string) {
+  const res = await fetch('/api/docs', {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ document_id: id }),
+  });
   if (!res.ok) {
     throw new Error('Request failed');
   }
