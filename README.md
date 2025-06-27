@@ -31,3 +31,13 @@ Accepts a PDF or DOCX file and stores the text segments in Qdrant. Each chunk is
 `POST /api/ask`
 
 Receives a question and retrieves the top 5 relevant segments from Qdrant. A `rerank` function sorts them and the top 3 are used as context for Ollama to generate an answer. The response includes the answer text and referenced segments.
+
+## Docker Compose
+
+Run the full stack with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+The Ollama service stores downloaded models in the `ollama` directory at the project root. This folder is mounted into the container so models persist across rebuilds and are not downloaded again if they already exist.
