@@ -1,5 +1,6 @@
 from uuid import uuid4
 from typing import List
+from time import time
 import io
 import re
 import logging
@@ -38,6 +39,10 @@ QDRANT_URL = f"http://{QDRANT_HOST}:{QDRANT_PORT}"
 COLLECTION_NAME = "documents"
 OLLAMA_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
 OLLAMA_LLM_MODEL = os.getenv("LLM_MODEL", "llama2")
+
+MAX_CONTEXT_TOKENS = int(os.getenv("MAX_CONTEXT_TOKENS", "1500"))
+CACHE_TTL = int(os.getenv("ASK_CACHE_TTL", "300"))
+ASK_CACHE: dict = {}
 
 qdrant_client = QdrantClient(QDRANT_URL, COLLECTION_NAME)
 
@@ -96,6 +101,11 @@ def get_embedding(text: str) -> List[float]:
         raise HTTPException(status_code=500, detail=f"Embedding service error: {exc}") from exc
 
 
+def count_tokens(text: str) -> int:
+    """Rudimentary token count based on whitespace splitting"""
+    return len(text.split())
+
+
 
 
 
@@ -121,6 +131,9 @@ async def upload(file: UploadFile = File(...), tags: str = Form("")):
 class AskRequest(BaseModel):
     question: str
     document_id: str | None = None
+    document_ids: List[str] | None = None
+    style: str | None = None
+    prompt_template: str | None = None
 
 
 class DeleteDocRequest(BaseModel):
@@ -216,19 +229,52 @@ def rerank(question: str, results: List[dict]) -> List[dict]:
 @app.post("/api/ask")
 async def ask(req: AskRequest):
     """根據問題向 Qdrant 取得相關段落並呼叫 LLM 回答"""
+    cache_key = (
+        req.question,
+        tuple(req.document_ids or ([req.document_id] if req.document_id else [])),
+        req.style,
+        req.prompt_template,
+    )
+    cached = ASK_CACHE.get(cache_key)
+    if cached and time() - cached["ts"] < CACHE_TTL:
+        return cached["data"]
+
     q_embedding = get_embedding(req.question)
     try:
-        results = qdrant_client.search(q_embedding, limit=5, document_id=req.document_id)
+        results = qdrant_client.search(
+            q_embedding,
+            limit=5,
+            document_id=req.document_id,
+            document_ids=req.document_ids,
+        )
     except HTTPException:
         raise
     except Exception as exc:
         logger.exception("Search Qdrant error: %s", exc)
         raise HTTPException(status_code=500, detail=f"Qdrant search error: {exc}") from exc
 
-    ranked = rerank(req.question, results)[:3]
-    context = "\n".join(r["payload"].get("text", "") for r in ranked)
-    prompt = (
-        f"Answer the question based on the context below.\n\nContext:\n{context}\n\nQuestion: {req.question}\nAnswer:"
+    ranked_all = rerank(req.question, results)
+    context_parts = []
+    used_results = []
+    tokens = 0
+    for r in ranked_all:
+        text = r["payload"].get("text", "")
+        t = count_tokens(text)
+        if tokens + t > MAX_CONTEXT_TOKENS:
+            break
+        tokens += t
+        context_parts.append(text)
+        used_results.append(r)
+    context = "\n".join(context_parts)
+
+    template = (
+        req.prompt_template
+        or "Answer the question based on the context below.\n{style}\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
+    )
+    prompt = template.format(
+        context=context,
+        question=req.question,
+        style=req.style or "",
     )
     try:
         resp = requests.post(
@@ -246,6 +292,8 @@ async def ask(req: AskRequest):
             "chunk_index": r["payload"].get("chunk_index"),
             "score": r.get("score"),
         }
-        for r in ranked
+        for r in used_results
     ]
-    return {"answer": answer, "references": references}
+    data = {"answer": answer, "references": references}
+    ASK_CACHE[cache_key] = {"ts": time(), "data": data}
+    return data

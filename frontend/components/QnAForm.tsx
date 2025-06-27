@@ -17,7 +17,7 @@ interface QARecord {
   question: string
   answer: string
   references: Reference[]
-  documentId?: string | null
+  documentIds?: string[]
 }
 
 export default function QnAForm() {
@@ -26,7 +26,15 @@ export default function QnAForm() {
   const [displayedAnswer, setDisplayedAnswer] = useState('')
   const [loading, setLoading] = useState(false)
   const [history, setHistory] = useState<QARecord[]>([])
-  const { selectedDocId } = useDoc()
+  const [style, setStyle] = useState('')
+  const { selectedDocIds } = useDoc()
+
+  function scoreColor(score?: number) {
+    if (score === undefined) return ''
+    if (score >= 0.8) return 'text-green-600'
+    if (score >= 0.5) return 'text-yellow-600'
+    return 'text-red-600'
+  }
 
   function animateAnswer(text: string) {
     setDisplayedAnswer('')
@@ -56,11 +64,11 @@ export default function QnAForm() {
     if (!question) return
     setLoading(true)
     try {
-      const data = await askQuestion(question, selectedDocId || undefined)
+      const data = await askQuestion(question, selectedDocIds, style)
       setResponse(data)
       animateAnswer(data.answer)
       setHistory([
-        { question, answer: data.answer, references: data.references, documentId: selectedDocId },
+        { question, answer: data.answer, references: data.references, documentIds: selectedDocIds },
         ...history,
       ])
     } catch (err) {
@@ -68,7 +76,7 @@ export default function QnAForm() {
         question,
         answer: 'Error fetching answer',
         references: [],
-        documentId: selectedDocId,
+        documentIds: selectedDocIds,
       }
       setResponse({ answer: errRecord.answer, references: [] })
       setHistory([errRecord, ...history])
@@ -77,14 +85,14 @@ export default function QnAForm() {
     }
   }
 
-  async function handleReask(q: string, docId?: string | null) {
+  async function handleReask(q: string, docIds?: string[]) {
     setLoading(true)
     try {
-      const data = await askQuestion(q, docId || undefined)
+      const data = await askQuestion(q, docIds || [], style)
       setResponse(data)
       animateAnswer(data.answer)
       setHistory([
-        { question: q, answer: data.answer, references: data.references, documentId: docId },
+        { question: q, answer: data.answer, references: data.references, documentIds: docIds },
         ...history,
       ])
     } catch {
@@ -103,6 +111,13 @@ export default function QnAForm() {
           onChange={e => setQuestion(e.target.value)}
           className="flex-1 border rounded p-2"
           placeholder="Ask a question"
+        />
+        <input
+          type="text"
+          value={style}
+          onChange={e => setStyle(e.target.value)}
+          className="flex-1 border rounded p-2"
+          placeholder="Style (optional)"
         />
         <button
           type="submit"
@@ -135,7 +150,7 @@ export default function QnAForm() {
               <p className="font-semibold mt-2">References:</p>
               <ul className="list-disc list-inside space-y-1">
                 {response.references.map((ref, idx) => (
-                  <li key={idx}>
+                  <li key={idx} className={scoreColor(ref.score)}>
                     [{ref.chunk_index}] (score: {ref.score?.toFixed(2)}) {ref.text}
                   </li>
                 ))}
@@ -155,7 +170,7 @@ export default function QnAForm() {
                   <div className="space-x-2">
                     <button
                       type="button"
-                      onClick={() => handleReask(h.question, h.documentId)}
+                      onClick={() => handleReask(h.question, h.documentIds)}
                       className="text-sm text-green-700 underline"
                     >
                       重新查詢
@@ -173,7 +188,7 @@ export default function QnAForm() {
                 {h.references.length > 0 && (
                   <ul className="list-disc list-inside text-sm mt-1 space-y-0.5">
                     {h.references.map((ref, rIdx) => (
-                      <li key={rIdx}>
+                      <li key={rIdx} className={scoreColor(ref.score)}>
                         [{ref.chunk_index}] (score: {ref.score?.toFixed(2)}) {ref.text}
                       </li>
                     ))}

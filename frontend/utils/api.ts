@@ -13,9 +13,10 @@ export async function uploadFile(file: File, tags: string) {
   return res.json();
 }
 
-export async function askQuestion(question: string, documentId?: string) {
+export async function askQuestion(question: string, documentIds: string[] = [], style?: string) {
   const body: Record<string, unknown> = { question }
-  if (documentId) body.document_id = documentId
+  if (documentIds.length > 0) body.document_ids = documentIds
+  if (style) body.style = style
   const res = await fetch('/api/ask', {
     method: 'POST',
     headers: {
