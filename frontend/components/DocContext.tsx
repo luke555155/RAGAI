@@ -1,13 +1,13 @@
 import { createContext, useContext, useState } from 'react'
 
 interface DocState {
-  selectedDocId: string | null
-  setSelectedDocId: (id: string | null) => void
+  selectedDocIds: string[]
+  setSelectedDocIds: (ids: string[]) => void
 }
 
 const DocContext = createContext<DocState>({
-  selectedDocId: null,
-  setSelectedDocId: () => {},
+  selectedDocIds: [],
+  setSelectedDocIds: () => {},
 })
 
 export function useDoc() {
@@ -15,9 +15,9 @@ export function useDoc() {
 }
 
 export function DocProvider({ children }: { children: React.ReactNode }) {
-  const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
+  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([])
   return (
-    <DocContext.Provider value={{ selectedDocId, setSelectedDocId }}>
+    <DocContext.Provider value={{ selectedDocIds, setSelectedDocIds }}>
       {children}
     </DocContext.Provider>
   )

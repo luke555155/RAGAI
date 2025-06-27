@@ -14,7 +14,7 @@ interface Doc {
 export default function DocumentsList() {
   const [docs, setDocs] = useState<Doc[]>([])
   const [filterTag, setFilterTag] = useState('')
-  const { selectedDocId, setSelectedDocId } = useDoc()
+  const { selectedDocIds, setSelectedDocIds } = useDoc()
 
   useEffect(() => {
     fetchDocs().then(data => setDocs(data.documents || []))
@@ -24,8 +24,8 @@ export default function DocumentsList() {
     if (!confirm('Delete document?')) return
     await deleteDoc(id)
     setDocs(docs.filter(d => d.document_id !== id))
-    if (selectedDocId === id) {
-      setSelectedDocId(null)
+    if (selectedDocIds.includes(id)) {
+      setSelectedDocIds(selectedDocIds.filter(d => d !== id))
     }
   }
 
@@ -73,13 +73,21 @@ export default function DocumentsList() {
                 </p>
               </div>
               <div className="space-x-2 whitespace-nowrap">
-                <button
-                  type="button"
-                  onClick={() => setSelectedDocId(doc.document_id)}
-                  className="px-2 py-1 text-sm bg-green-500 text-white rounded"
-                >
+                <label className="px-2 py-1 text-sm bg-green-500 text-white rounded cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mr-1"
+                    checked={selectedDocIds.includes(doc.document_id)}
+                    onChange={() => {
+                      if (selectedDocIds.includes(doc.document_id)) {
+                        setSelectedDocIds(selectedDocIds.filter(d => d !== doc.document_id))
+                      } else {
+                        setSelectedDocIds([...selectedDocIds, doc.document_id])
+                      }
+                    }}
+                  />
                   選擇
-                </button>
+                </label>
                 <button
                   type="button"
                   onClick={() => handleDelete(doc.document_id)}

@@ -44,11 +44,23 @@ class QdrantClient:
             logger.exception("Upload points error: %s", exc)
             raise HTTPException(status_code=500, detail=f"Qdrant error: {exc}") from exc
 
-    def search(self, vector: List[float], limit: int = 3, document_id: Optional[str] = None) -> List[Dict]:
-        """根據向量進行相似度搜尋，可依 document_id 篩選"""
+    def search(
+        self,
+        vector: List[float],
+        limit: int = 3,
+        document_id: Optional[str] = None,
+        document_ids: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        """根據向量進行相似度搜尋，可依 document_id 或多個 document_ids 篩選"""
         try:
             body: Dict = {"vector": vector, "limit": limit}
-            if document_id:
+            if document_ids:
+                body["filter"] = {
+                    "must": [
+                        {"key": "document_id", "match": {"any": document_ids}}
+                    ]
+                }
+            elif document_id:
                 body["filter"] = {
                     "must": [{"key": "document_id", "match": {"value": document_id}}]
                 }
