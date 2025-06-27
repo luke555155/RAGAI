@@ -79,13 +79,25 @@ def ensure_paths() -> None:
 
 
 def check_ollama_ready() -> None:
+    """Ensure the required Ollama model is available."""
     payload = {"name": OLLAMA_LLM_MODEL}
     while True:
         try:
             resp = requests.post(f"{OLLAMA_BASE_URL}/api/show", json=payload)
             if resp.status_code == 200:
                 break
-            logger.warning("Ollama model not ready, retrying...")
+            if resp.status_code == 404:
+                pull = requests.post(f"{OLLAMA_BASE_URL}/api/pull", json=payload)
+                if pull.status_code not in (200, 202):
+                    logger.warning(
+                        "Failed to pull model %s: %s", OLLAMA_LLM_MODEL, pull.text
+                    )
+                else:
+                    logger.info("Pulling Ollama model %s", OLLAMA_LLM_MODEL)
+            else:
+                logger.warning(
+                    "Ollama model not ready (status %s), retrying...", resp.status_code
+                )
         except Exception as exc:
             logger.warning("Ollama connection failed: %s", exc)
         sleep(3)
