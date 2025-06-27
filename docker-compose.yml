@@ -9,6 +9,20 @@ services:
       - ./backend:/app
     env_file:
       - .env
+    depends_on:
+      - qdrant
+      - ollama
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
 
   qdrant:
     image: qdrant/qdrant
@@ -23,6 +37,9 @@ services:
       - "11434:11434"
     environment:
       - OLLAMA_MODELS=nous-hermes2:Q4_K_M
+    volumes:
+      - ollama_data:/root/.ollama
 
 volumes:
   qdrant_data:
+  ollama_data:
